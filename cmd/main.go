@@ -11,16 +11,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/russianinvestments/invest-api-go-sdk/examples/interval_bot/internal/bot"
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/russianinvestments/invest-api-go-sdk/investgo"
+	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
+
+	bot2 "github.com/jstalex/tingo/internal/bot"
 )
 
 // Параметры для изменения конфигурации бота
 var (
-	intervalConfig = bot.IntervalStrategyConfig{
+	intervalConfig = bot2.IntervalStrategyConfig{
 		PreferredPositionPrice:  200,
 		MaxPositionPrice:        600,
 		TopInstrumentsQuantity:  10,
@@ -29,7 +31,7 @@ var (
 		StopLossPercent:         1.8,
 		AnalyseLowPercentile:    0,
 		AnalyseHighPercentile:   0,
-		Analyse:                 bot.BEST_WIDTH,
+		Analyse:                 bot2.BEST_WIDTH,
 		// Параметры ниже не влияют на успех стратегии
 		IntervalUpdateDelay:   time.Minute * MINUTES,
 		SellOut:               true,
@@ -178,9 +180,9 @@ func main() {
 	marketDataService := client.NewMarketDataServiceClient()
 	// инструменты для исполнителя, заполняем информацию по всем инструментам из конфига
 	// для торгов передадим избранные
-	instrumentsForExecutor := make(map[string]bot.Instrument, len(instrumentIds))
+	instrumentsForExecutor := make(map[string]bot2.Instrument, len(instrumentIds))
 	// инструменты для хранилища
-	instrumentsForStorage := make(map[string]bot.StorageInstrument, len(instrumentIds))
+	instrumentsForStorage := make(map[string]bot2.StorageInstrument, len(instrumentIds))
 	for _, instrument := range instrumentIds {
 		// в данном случае ключ это uid, поэтому используем InstrumentByUid()
 		resp, err := instrumentsService.InstrumentByUid(instrument)
@@ -188,7 +190,7 @@ func main() {
 			cancel()
 			logger.Errorf(err.Error())
 		}
-		instrumentsForExecutor[instrument] = bot.Instrument{
+		instrumentsForExecutor[instrument] = bot2.Instrument{
 			EntryPrice:      0,
 			Lot:             resp.GetInstrument().GetLot(),
 			Currency:        resp.GetInstrument().GetCurrency(),
@@ -196,7 +198,7 @@ func main() {
 			MinPriceInc:     resp.GetInstrument().GetMinPriceIncrement(),
 			StopLossPercent: intervalConfig.StopLossPercent,
 		}
-		instrumentsForStorage[instrument] = bot.StorageInstrument{
+		instrumentsForStorage[instrument] = bot2.StorageInstrument{
 			CandleInterval: intervalConfig.StorageCandleInterval,
 			PriceStep:      resp.GetInstrument().GetMinPriceIncrement(),
 			FirstUpdate:    intervalConfig.StorageFromTime,
@@ -237,7 +239,7 @@ func main() {
 	// меняем инструменты в конфиге
 	intervalConfig.Instruments = preferredInstruments
 	// создаем хранилище для свечей
-	storage, err := bot.NewCandlesStorage(bot.NewCandlesStorageRequest{
+	storage, err := bot2.NewCandlesStorage(bot2.NewCandlesStorageRequest{
 		DBPath:              intervalConfig.StorageDBPath,
 		Update:              intervalConfig.StorageUpdate,
 		RequiredInstruments: instrumentsForStorage,
@@ -250,9 +252,9 @@ func main() {
 		cancel()
 		logger.Fatalf(err.Error())
 	}
-	executor := bot.NewExecutor(ctx, client, instrumentsForExecutor)
+	executor := bot2.NewExecutor(ctx, client, instrumentsForExecutor)
 	// создание интервального бота
-	intervalBot, err := bot.NewBot(ctx, client, storage, executor, intervalConfig)
+	intervalBot, err := bot2.NewBot(ctx, client, storage, executor, intervalConfig)
 	if err != nil {
 		logger.Fatalf("interval bot creating fail %v", err.Error())
 	}

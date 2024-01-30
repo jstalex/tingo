@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/montanaflynn/stats"
+
 	"github.com/russianinvestments/invest-api-go-sdk/investgo"
 	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
 )

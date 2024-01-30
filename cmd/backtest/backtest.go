@@ -13,13 +13,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/russianinvestments/invest-api-go-sdk/examples/interval_bot/internal/bot"
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sourcegraph/conc/pool"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/russianinvestments/invest-api-go-sdk/investgo"
+	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
+
+	bot2 "github.com/jstalex/tingo/internal/bot"
 )
 
 // DISABLE_INFO_LOGS - Отключение подробных сообщений о сделках по инструментам
@@ -35,7 +37,7 @@ var (
 	// Режим запуска теста, на одном конфиге или перебор сгенерированных конфигов
 	mode = TEST_WITH_CONFIG
 	// Конфигурация стратегии, остальные поля заполняются из конфига бектеста
-	intervalConfig = bot.IntervalStrategyConfig{
+	intervalConfig = bot2.IntervalStrategyConfig{
 		PreferredPositionPrice: 1000,
 		MaxPositionPrice:       5000,
 		TopInstrumentsQuantity: 10,
@@ -46,8 +48,8 @@ var (
 		StorageUpdate:          false,
 	}
 	// Конфиг бектеста для режима TEST_WITH_CONFIG
-	configToTest = bot.BacktestConfig{
-		Analyse:                 bot.BEST_WIDTH,
+	configToTest = bot2.BacktestConfig{
+		Analyse:                 bot2.BEST_WIDTH,
 		LowPercentile:           0,
 		HighPercentile:          0,
 		MinProfit:               0.3,
@@ -103,7 +105,7 @@ const (
 
 // Report - Отчет о тесте на конкретном конфиге
 type Report struct {
-	bc                      bot.BacktestConfig
+	bc                      bot2.BacktestConfig
 	totalProfit             float64
 	averageDayPercentProfit float64
 }
@@ -239,9 +241,9 @@ func main() {
 	marketDataService := client.NewMarketDataServiceClient()
 	// инструменты для исполнителя, заполняем информацию по всем инструментам из конфига
 	// для торгов передадим избранные
-	instrumentsForExecutor := make(map[string]bot.Instrument, len(instrumentIds))
+	instrumentsForExecutor := make(map[string]bot2.Instrument, len(instrumentIds))
 	// инструменты для хранилища
-	instrumentsForStorage := make(map[string]bot.StorageInstrument, len(instrumentIds))
+	instrumentsForStorage := make(map[string]bot2.StorageInstrument, len(instrumentIds))
 	for _, instrument := range instrumentIds {
 		// в данном случае ключ это uid, поэтому используем InstrumentByUid()
 		resp, err := instrumentsService.InstrumentByUid(instrument)
@@ -249,7 +251,7 @@ func main() {
 			cancel()
 			logger.Errorf(err.Error())
 		}
-		instrumentsForExecutor[instrument] = bot.Instrument{
+		instrumentsForExecutor[instrument] = bot2.Instrument{
 			EntryPrice:      0,
 			Lot:             resp.GetInstrument().GetLot(),
 			Currency:        resp.GetInstrument().GetCurrency(),
@@ -257,7 +259,7 @@ func main() {
 			MinPriceInc:     resp.GetInstrument().GetMinPriceIncrement(),
 			StopLossPercent: intervalConfig.StopLossPercent,
 		}
-		instrumentsForStorage[instrument] = bot.StorageInstrument{
+		instrumentsForStorage[instrument] = bot2.StorageInstrument{
 			CandleInterval: intervalConfig.StorageCandleInterval,
 			PriceStep:      resp.GetInstrument().GetMinPriceIncrement(),
 			FirstUpdate:    intervalConfig.StorageFromTime,
@@ -298,7 +300,7 @@ func main() {
 	// меняем инструменты в конфиге
 	intervalConfig.Instruments = preferredInstruments
 	// создаем хранилище для свечей
-	storage, err := bot.NewCandlesStorage(bot.NewCandlesStorageRequest{
+	storage, err := bot2.NewCandlesStorage(bot2.NewCandlesStorageRequest{
 		DBPath:              intervalConfig.StorageDBPath,
 		Update:              intervalConfig.StorageUpdate,
 		RequiredInstruments: instrumentsForStorage,
@@ -311,9 +313,9 @@ func main() {
 		cancel()
 		logger.Fatalf(err.Error())
 	}
-	executor := bot.NewExecutor(ctx, client, instrumentsForExecutor)
+	executor := bot2.NewExecutor(ctx, client, instrumentsForExecutor)
 	// создание интервального бота
-	intervalBot, err := bot.NewBot(ctx, client, storage, executor, intervalConfig)
+	intervalBot, err := bot2.NewBot(ctx, client, storage, executor, intervalConfig)
 	if err != nil {
 		logger.Fatalf("interval bot creating fail %v", err.Error())
 	}
@@ -327,7 +329,7 @@ func main() {
 }
 
 // TestWithConfig - Проверка на одном конфиге
-func TestWithConfig(ctx context.Context, b *bot.Bot, logger investgo.Logger, start, stop time.Time, config bot.BacktestConfig) {
+func TestWithConfig(ctx context.Context, b *bot2.Bot, logger investgo.Logger, start, stop time.Time, config bot2.BacktestConfig) {
 	r, err := testConfigWithBar(ctx, b, start, stop, config)
 	if err != nil {
 		logger.Errorf(err.Error())
@@ -336,9 +338,9 @@ func TestWithConfig(ctx context.Context, b *bot.Bot, logger investgo.Logger, sta
 }
 
 // TestWithMultipleConfigs - Генерация мнодетсва конфигов и проверка на них
-func TestWithMultipleConfigs(ctx context.Context, b *bot.Bot, logger investgo.Logger, start, stop time.Time) {
+func TestWithMultipleConfigs(ctx context.Context, b *bot2.Bot, logger investgo.Logger, start, stop time.Time) {
 	// слайс конфигов для бекстеста
-	bc := make([]bot.BacktestConfig, 0)
+	bc := make([]bot2.BacktestConfig, 0)
 	// начальные значения для стоп-лосса в процентах и кол-ва дней для расчета интервала
 	stopLoss := stopLossMin
 	// простым перебором генерируем конфиги с разными значениями
@@ -347,8 +349,8 @@ func TestWithMultipleConfigs(ctx context.Context, b *bot.Bot, logger investgo.Lo
 		for daysToCalculate < daysToCalculateMax {
 			minProfit := minProfitMin
 			for minProfit < minProfitMax {
-				bc = append(bc, bot.BacktestConfig{
-					Analyse:                 bot.BEST_WIDTH,
+				bc = append(bc, bot2.BacktestConfig{
+					Analyse:                 bot2.BEST_WIDTH,
 					LowPercentile:           0,
 					HighPercentile:          0,
 					MinProfit:               minProfit,
@@ -359,8 +361,8 @@ func TestWithMultipleConfigs(ctx context.Context, b *bot.Bot, logger investgo.Lo
 
 				tempPerc := percentileMin
 				for tempPerc < percentileMax {
-					bc = append(bc, bot.BacktestConfig{
-						Analyse:                 bot.MATH_STAT,
+					bc = append(bc, bot2.BacktestConfig{
+						Analyse:                 bot2.MATH_STAT,
 						LowPercentile:           math.Round(tempPerc),
 						HighPercentile:          math.Round(100 - tempPerc),
 						MinProfit:               minProfit,
@@ -414,7 +416,7 @@ func TestWithMultipleConfigs(ctx context.Context, b *bot.Bot, logger investgo.Lo
 }
 
 // testConfig - Бектест для конфига на времени start-stop
-func testConfig(ctx context.Context, b *bot.Bot, start, stop time.Time, config bot.BacktestConfig) (Report, error) {
+func testConfig(ctx context.Context, b *bot2.Bot, start, stop time.Time, config bot2.BacktestConfig) (Report, error) {
 	initDate := start
 	stopDate := stop
 
@@ -453,7 +455,7 @@ func testConfig(ctx context.Context, b *bot.Bot, start, stop time.Time, config b
 }
 
 // testConfig - Бектест для конфига на времени start-stop с прогресс-баром
-func testConfigWithBar(ctx context.Context, b *bot.Bot, start, stop time.Time, config bot.BacktestConfig) (Report, error) {
+func testConfigWithBar(ctx context.Context, b *bot2.Bot, start, stop time.Time, config bot2.BacktestConfig) (Report, error) {
 	initDate := start
 	stopDate := stop
 
