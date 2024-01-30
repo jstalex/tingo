@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,18 +12,19 @@ import (
 	"syscall"
 	"time"
 
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
-
-	bot2 "github.com/jstalex/tingo/internal/bot"
+	"github.com/jstalex/tingo/internal/bot"
+	"github.com/jstalex/tingo/investgo"
+	pb "github.com/jstalex/tingo/proto"
 )
 
 // Параметры для изменения конфигурации бота
 var (
-	intervalConfig = bot2.IntervalStrategyConfig{
+	intervalConfig = bot.IntervalStrategyConfig{
 		PreferredPositionPrice:  200,
 		MaxPositionPrice:        600,
 		TopInstrumentsQuantity:  10,
@@ -31,7 +33,7 @@ var (
 		StopLossPercent:         1.8,
 		AnalyseLowPercentile:    0,
 		AnalyseHighPercentile:   0,
-		Analyse:                 bot2.BEST_WIDTH,
+		Analyse:                 bot.BEST_WIDTH,
 		// Параметры ниже не влияют на успех стратегии
 		IntervalUpdateDelay:   time.Minute * MINUTES,
 		SellOut:               true,
@@ -98,9 +100,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("logger creating error %v", err)
 	}
+
+	//mux := http.NewServeMux()
+	//mux.Handle("/metrics", promhttp.Handler())
+	//
+	//srv := http.Server{
+	//	Addr:    ":9100",
+	//	Handler: mux,
+	//}
+	//
+	//srv.ListenAndServe()
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Fatal(http.ListenAndServe(":9100", nil))
+	}()
+
+	gMetrics := grpcprometheus.NewClientMetrics()
+	gMetrics.EnableClientHandlingTimeHistogram()
+
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
 	// через них вызывать нужные методы
-	client, err := investgo.NewClient(ctx, sdkConfig, logger)
+	client, err := investgo.NewClient(ctx, sdkConfig, logger, gMetrics)
 	if err != nil {
 		logger.Fatalf("client creating error %v", err.Error())
 	}
@@ -180,9 +201,9 @@ func main() {
 	marketDataService := client.NewMarketDataServiceClient()
 	// инструменты для исполнителя, заполняем информацию по всем инструментам из конфига
 	// для торгов передадим избранные
-	instrumentsForExecutor := make(map[string]bot2.Instrument, len(instrumentIds))
+	instrumentsForExecutor := make(map[string]bot.Instrument, len(instrumentIds))
 	// инструменты для хранилища
-	instrumentsForStorage := make(map[string]bot2.StorageInstrument, len(instrumentIds))
+	instrumentsForStorage := make(map[string]bot.StorageInstrument, len(instrumentIds))
 	for _, instrument := range instrumentIds {
 		// в данном случае ключ это uid, поэтому используем InstrumentByUid()
 		resp, err := instrumentsService.InstrumentByUid(instrument)
@@ -190,7 +211,7 @@ func main() {
 			cancel()
 			logger.Errorf(err.Error())
 		}
-		instrumentsForExecutor[instrument] = bot2.Instrument{
+		instrumentsForExecutor[instrument] = bot.Instrument{
 			EntryPrice:      0,
 			Lot:             resp.GetInstrument().GetLot(),
 			Currency:        resp.GetInstrument().GetCurrency(),
@@ -198,7 +219,7 @@ func main() {
 			MinPriceInc:     resp.GetInstrument().GetMinPriceIncrement(),
 			StopLossPercent: intervalConfig.StopLossPercent,
 		}
-		instrumentsForStorage[instrument] = bot2.StorageInstrument{
+		instrumentsForStorage[instrument] = bot.StorageInstrument{
 			CandleInterval: intervalConfig.StorageCandleInterval,
 			PriceStep:      resp.GetInstrument().GetMinPriceIncrement(),
 			FirstUpdate:    intervalConfig.StorageFromTime,
@@ -239,7 +260,7 @@ func main() {
 	// меняем инструменты в конфиге
 	intervalConfig.Instruments = preferredInstruments
 	// создаем хранилище для свечей
-	storage, err := bot2.NewCandlesStorage(bot2.NewCandlesStorageRequest{
+	storage, err := bot.NewCandlesStorage(bot.NewCandlesStorageRequest{
 		DBPath:              intervalConfig.StorageDBPath,
 		Update:              intervalConfig.StorageUpdate,
 		RequiredInstruments: instrumentsForStorage,
@@ -252,9 +273,9 @@ func main() {
 		cancel()
 		logger.Fatalf(err.Error())
 	}
-	executor := bot2.NewExecutor(ctx, client, instrumentsForExecutor)
+	executor := bot.NewExecutor(ctx, client, instrumentsForExecutor)
 	// создание интервального бота
-	intervalBot, err := bot2.NewBot(ctx, client, storage, executor, intervalConfig)
+	intervalBot, err := bot.NewBot(ctx, client, storage, executor, intervalConfig)
 	if err != nil {
 		logger.Fatalf("interval bot creating fail %v", err.Error())
 	}

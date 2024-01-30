@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
+	"github.com/jstalex/tingo/investgo"
+	pb "github.com/jstalex/tingo/proto"
 )
 
 type InstrumentState int

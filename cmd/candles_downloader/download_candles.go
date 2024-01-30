@@ -10,14 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
 	"github.com/schollz/progressbar/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/jstalex/tingo/investgo"
+	pb "github.com/jstalex/tingo/proto"
 )
 
 // Параметры для изменения конфигурации загрузчика свечей
@@ -82,7 +84,7 @@ func main() {
 	}
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
 	// через них вызывать нужные методы
-	client, err := investgo.NewClient(ctx, sdkConfig, logger)
+	client, err := investgo.NewClient(ctx, sdkConfig, logger, &grpcprometheus.ClientMetrics{})
 	if err != nil {
 		logger.Fatalf("client creating error %v", err.Error())
 	}

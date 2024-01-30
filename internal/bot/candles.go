@@ -10,8 +10,8 @@ import (
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/russianinvestments/invest-api-go-sdk/investgo"
-	pb "github.com/russianinvestments/invest-api-go-sdk/proto"
+	"github.com/jstalex/tingo/investgo"
+	pb "github.com/jstalex/tingo/proto"
 )
 
 // StorageInstrument - Информация об инструменте в хранилище
