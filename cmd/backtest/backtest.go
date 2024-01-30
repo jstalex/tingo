@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sourcegraph/conc/pool"
 	"go.uber.org/zap"
@@ -151,7 +150,7 @@ func main() {
 	}
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
 	// через них вызывать нужные методы
-	client, err := investgo.NewClient(ctx, sdkConfig, logger, &grpcprometheus.ClientMetrics{})
+	client, err := investgo.NewClient(ctx, sdkConfig, logger, nil)
 	if err != nil {
 		logger.Fatalf("client creating error %v", err.Error())
 	}

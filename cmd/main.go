@@ -13,6 +13,7 @@ import (
 	"time"
 
 	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -29,7 +30,7 @@ var (
 		MaxPositionPrice:        600,
 		TopInstrumentsQuantity:  10,
 		MinProfit:               0.3,
-		DaysToCalculateInterval: 3,
+		DaysToCalculateInterval: 1,
 		StopLossPercent:         1.8,
 		AnalyseLowPercentile:    0,
 		AnalyseHighPercentile:   0,
@@ -39,7 +40,7 @@ var (
 		SellOut:               true,
 		StorageDBPath:         "candles/candles.db",
 		StorageCandleInterval: pb.CandleInterval_CANDLE_INTERVAL_1_MIN,
-		StorageFromTime:       time.Now().Add(-time.Hour * 24 * 180),
+		StorageFromTime:       time.Now().Add(-time.Hour * 24 * 1),
 		StorageUpdate:         true,
 	}
 	// Критерий для отбора бумаг. Акции, фонды, акции и фонды
@@ -111,13 +112,17 @@ func main() {
 	//
 	//srv.ListenAndServe()
 
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(":9100", nil))
-	}()
-
+	reg := prometheus.NewRegistry()
 	gMetrics := grpcprometheus.NewClientMetrics()
 	gMetrics.EnableClientHandlingTimeHistogram()
+	reg.MustRegister(gMetrics)
+
+	gathers := prometheus.Gatherers{reg, prometheus.DefaultGatherer}
+
+	go func() {
+		http.Handle("/metrics", promhttp.HandlerFor(gathers, promhttp.HandlerOpts{}))
+		log.Fatal(http.ListenAndServe(":9101", nil))
+	}()
 
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
 	// через них вызывать нужные методы

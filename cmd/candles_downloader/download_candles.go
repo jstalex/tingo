@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
@@ -27,7 +26,7 @@ var (
 	// FROM - Стартовое время для загрузки свечей
 	// FROM = time.Date(2023, 1, 10, 0, 0, 0, 0, time.Local)
 	// Последние 180 суток
-	FROM = time.Now().Add(-time.Hour * 24 * 180)
+	FROM = time.Now().Add(-time.Hour * 24 * 1)
 	// INTERVAL - Интервал для запроса свечей
 	INTERVAL = pb.CandleInterval_CANDLE_INTERVAL_1_MIN
 )
@@ -84,7 +83,7 @@ func main() {
 	}
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
 	// через них вызывать нужные методы
-	client, err := investgo.NewClient(ctx, sdkConfig, logger, &grpcprometheus.ClientMetrics{})
+	client, err := investgo.NewClient(ctx, sdkConfig, logger, nil)
 	if err != nil {
 		logger.Fatalf("client creating error %v", err.Error())
 	}

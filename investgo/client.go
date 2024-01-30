@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"time"
 
 	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -57,21 +58,24 @@ func NewClient(ctx context.Context, conf Config, l Logger, gMetrics *grpcprometh
 
 	streamInterceptors := []grpc.StreamClientInterceptor{
 		retry.StreamClientInterceptor(opts...),
-		gMetrics.StreamClientInterceptor(),
 	}
 
 	var unaryInterceptors []grpc.UnaryClientInterceptor
 	if conf.DisableResourceExhaustedRetry {
 		unaryInterceptors = []grpc.UnaryClientInterceptor{
 			retry.UnaryClientInterceptor(opts...),
-			gMetrics.UnaryClientInterceptor(),
 		}
 	} else {
 		unaryInterceptors = []grpc.UnaryClientInterceptor{
 			retry.UnaryClientInterceptor(opts...),
 			retry.UnaryClientInterceptorRE(exhaustedOpts...),
-			gMetrics.UnaryClientInterceptor(),
 		}
+	}
+
+	if gMetrics != nil {
+		unaryInterceptors = append([]grpc.UnaryClientInterceptor{gMetrics.UnaryClientInterceptor()}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamClientInterceptor{gMetrics.StreamClientInterceptor()}, streamInterceptors...)
+		log.Println("Interceptors added!")
 	}
 
 	conn, err := grpc.Dial(conf.EndPoint,
