@@ -19,6 +19,12 @@ func TimeToTimestamp(t time.Time) *timestamppb.Timestamp {
 
 // FloatToQuotation - Перевод float в Quotation, step - шаг цены для инструмента (min_price_increment)
 func FloatToQuotation(number float64, step *pb.Quotation) *pb.Quotation {
+	if step == nil {
+		return &pb.Quotation{}
+	}
+	if step.GetUnits() == 0 && step.GetNano() == 0 {
+		return &pb.Quotation{}
+	}
 	// делим дробь на дробь и округляем до ближайшего целого
 	k := math.Round(number / step.ToFloat())
 	// целое умножаем на дробный шаг и получаем готовое дробное значение
