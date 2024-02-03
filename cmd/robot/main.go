@@ -122,7 +122,7 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", promhttp.HandlerFor(gathers, promhttp.HandlerOpts{}))
-		log.Fatal(http.ListenAndServe(":9101", nil))
+		log.Fatal(http.ListenAndServe(":9100", nil))
 	}()
 
 	// создаем клиента для investAPI, он позволяет создавать нужные сервисы и уже
