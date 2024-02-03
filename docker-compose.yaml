@@ -2,7 +2,7 @@ version: "3"
 
 services:
   bot:
-    image: bot:local
+    image: robot:local
     environment:
       PG_NAME: postgres
       PG_USER: admin
@@ -24,7 +24,7 @@ services:
       - 5432:5432
 
   migrate:
-    image: migrate:1
+    image: migrate:local
     environment:
       PGDATABASE: postgres
       PGUSER: admin
@@ -61,3 +61,16 @@ services:
     restart: unless-stopped
     ports:
       - '3000:3000'
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - 8080:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    depends_on:
+      - db

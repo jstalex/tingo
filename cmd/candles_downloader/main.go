@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -11,8 +12,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"github.com/schollz/progressbar/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -138,7 +139,17 @@ func main() {
 	}
 	logger.Infof("got %v instruments", len(instrumentIds))
 	// инициализируем sqlite для сохранения исторических свечей по инструментам
-	db, err := initDB(DB_PATH)
+
+	name := os.Getenv("PG_NAME")
+	user := os.Getenv("PG_USER")
+	pass := os.Getenv("PG_PASSWORD")
+	host := os.Getenv("PG_HOST")
+
+	// url := fmt.Sprintf("postgres://%s:%s@%s:5432/%s", user, pass, host, name)
+	url := fmt.Sprintf("host=%s port=%v user=%s password=%s dbname=%s sslmode=%s",
+		host, 5432, user, pass, name, "disable")
+
+	db, err := initDB(url)
 	if err != nil {
 		logger.Fatalf(err.Error())
 	}
@@ -181,37 +192,13 @@ func main() {
 	}
 }
 
-var schema = `
-create table if not exists candles (
-    id integer primary key autoincrement,
-    instrument_uid text,
-	open real,
-	close real,
-	high real,
-	low real,
-	volume integer,
-	time integer,
-	is_complete integer,
-    unique (instrument_uid, time)
-);
-
-create table if not exists updates (
-	instrument_id text unique,
-	first_time integer,
-	last_time integer
-);
-`
-
 // initDB - Инициализация бд
 func initDB(path string) (*sqlx.DB, error) {
-	db, err := sqlx.Open("sqlite3", path)
+	db, err := sqlx.Open("postgres", path)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-	if _, err = db.Exec(schema); err != nil {
 		return nil, err
 	}
 	log.Printf("database initialized")
@@ -233,7 +220,7 @@ func storeCandlesInDB(db *sqlx.DB, uid string, first, last time.Time, hc []*pb.H
 		}()
 
 		insertCandle, err := tx.Prepare(`insert into candles (instrument_uid, open, close, high, low, volume, time, is_complete) 
-		values (?, ?, ?, ?, ?, ?, ?, ?) `)
+		values ($1, $2, $3, $4, $5, $6, $7, $8) `)
 		if err != nil {
 			return err
 		}
@@ -253,7 +240,7 @@ func storeCandlesInDB(db *sqlx.DB, uid string, first, last time.Time, hc []*pb.H
 				candle.GetTime().AsTime().Unix(),
 				candle.GetIsComplete())
 			if err != nil {
-				if errors.As(err, &sqlite3.Error{}) {
+				if errors.As(err, &pq.Error{}) {
 					continue
 				} else {
 					return err
@@ -266,7 +253,9 @@ func storeCandlesInDB(db *sqlx.DB, uid string, first, last time.Time, hc []*pb.H
 		return err
 	}
 	// записываем в базу время последнего обновления
-	_, err = db.Exec(`insert or replace into updates(instrument_id, first_time, last_time) values (?, ?, ?)`, uid, first.Unix(), last.Unix())
+	_, err = db.Exec(`insert into updates(instrument_id, first_time, last_time) values ($1, $2, $3) 
+    	ON CONFLICT (instrument_id) DO UPDATE SET instrument_id = excluded.instrument_id, 
+		first_time = excluded.first_time, last_time = excluded.last_time`, uid, first.Unix(), last.Unix())
 	if err != nil {
 		return err
 	}

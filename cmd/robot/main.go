@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -264,9 +265,19 @@ func main() {
 	}
 	// меняем инструменты в конфиге
 	intervalConfig.Instruments = preferredInstruments
+
+	name := os.Getenv("PG_NAME")
+	user := os.Getenv("PG_USER")
+	pass := os.Getenv("PG_PASSWORD")
+	host := os.Getenv("PG_HOST")
+
+	// url := fmt.Sprintf("postgres://%s:%s@%s:5432/%s", user, pass, host, name)
+	url := fmt.Sprintf("host=%s port=%v user=%s password=%s dbname=%s sslmode=%s",
+		host, 5432, user, pass, name, "disable")
+
 	// создаем хранилище для свечей
 	storage, err := bot.NewCandlesStorage(bot.NewCandlesStorageRequest{
-		DBPath:              intervalConfig.StorageDBPath,
+		DBPath:              url,
 		Update:              intervalConfig.StorageUpdate,
 		RequiredInstruments: instrumentsForStorage,
 		Logger:              client.Logger,

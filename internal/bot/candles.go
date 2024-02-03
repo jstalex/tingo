@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 
 	"github.com/jstalex/tingo/investgo"
 	pb "github.com/jstalex/tingo/proto"
@@ -31,27 +31,6 @@ type CandlesStorage struct {
 	logger      investgo.Logger
 	db          *sqlx.DB
 }
-
-var schema = `
-create table if not exists candles (
-    id integer primary key autoincrement,
-    instrument_uid text,
-	open real,
-	close real,
-	high real,
-	low real,
-	volume integer,
-	time integer,
-	is_complete integer,
-    unique (instrument_uid, time)
-);
-
-create table if not exists updates (
-    instrument_id text unique ,
-	first_time integer,
-	last_time integer
-);
-`
 
 // NewCandlesStorageRequest - Параметры для создания хранилища свечей
 type NewCandlesStorageRequest struct {
@@ -220,7 +199,7 @@ func (c *CandlesStorage) CandlesAll(uid string) ([]*pb.HistoricCandle, error) {
 		return nil, fmt.Errorf("%v instrument not found, at first LoadCandlesHistory()", c.ticker(uid))
 	}
 
-	stmt, err := c.db.Preparex(`select * from candles where instrument_uid=? order by time `)
+	stmt, err := c.db.Preparex(`select * from candles where instrument_uid=$1 order by time `)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +236,7 @@ func (c *CandlesStorage) CandlesAll(uid string) ([]*pb.HistoricCandle, error) {
 				Close:      investgo.FloatToQuotation(dst.Close, instrument.PriceStep),
 				Volume:     int64(dst.Volume),
 				Time:       investgo.TimeToTimestamp(time.Unix(dst.Time, 0)),
-				IsComplete: dst.IsComplete == 1,
+				IsComplete: dst.IsComplete,
 			})
 		}
 	}
@@ -356,14 +335,11 @@ func (c *CandlesStorage) lastUpdates() (map[string]StorageInstrument, error) {
 
 // initDB - Инициализация бд
 func (c *CandlesStorage) initDB(path string) (*sqlx.DB, error) {
-	db, err := sqlx.Open("sqlite3", path)
+	db, err := sqlx.Open("postgres", path)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-	if _, err = db.Exec(schema); err != nil {
 		return nil, err
 	}
 	c.logger.Infof("database initialized")
@@ -383,7 +359,7 @@ func (c *CandlesStorage) storeCandlesInDB(uid string, update time.Time, hc []*pb
 			}
 		}()
 		insertCandle, err := tx.Prepare(`insert into candles (instrument_uid, open, close, high, low, volume, time, is_complete) 
-		values (?, ?, ?, ?, ?, ?, ?, ?) `)
+		values ($1, $2, $3, $4, $5, $6, $7, $8) `)
 		if err != nil {
 			return err
 		}
@@ -403,7 +379,7 @@ func (c *CandlesStorage) storeCandlesInDB(uid string, update time.Time, hc []*pb
 				candle.GetTime().AsTime().Unix(),
 				candle.GetIsComplete())
 			if err != nil {
-				if errors.As(err, &sqlite3.Error{}) {
+				if errors.As(err, &pq.Error{}) {
 					continue
 				} else {
 					return err
@@ -416,7 +392,9 @@ func (c *CandlesStorage) storeCandlesInDB(uid string, update time.Time, hc []*pb
 		return err
 	}
 	// записываем в базу время последнего обновления
-	_, err = c.db.Exec(`insert or replace into updates(instrument_id, first_time, last_time) values (?, ?, ?)`,
+	_, err = c.db.Exec(`insert into updates(instrument_id, first_time, last_time) values ($1, $2, $3) 
+    	ON CONFLICT (instrument_id) DO UPDATE SET instrument_id = excluded.instrument_id, 
+		first_time = excluded.first_time, last_time = excluded.last_time`,
 		uid, c.instruments[uid].FirstUpdate.Unix(), update.Unix())
 	if err != nil {
 		return err
@@ -434,12 +412,12 @@ type CandleDB struct {
 	Low           float64 `db:"low"`
 	Volume        int     `db:"volume"`
 	Time          int64   `db:"time"`
-	IsComplete    int     `db:"is_complete"`
+	IsComplete    bool    `db:"is_complete"`
 }
 
 // loadCandlesFromDB - Загрузка исторических свечей по инструменту из напрямую из бд
 func (c *CandlesStorage) loadCandlesFromDB(uid string, inc *pb.Quotation, from, to time.Time) ([]*pb.HistoricCandle, error) {
-	stmt, err := c.db.Preparex(`select * from candles where instrument_uid=? and time between ? and ? order by time`)
+	stmt, err := c.db.Preparex(`select * from candles where instrument_uid=$1 and time between $2 and $3 order by time`)
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +454,7 @@ func (c *CandlesStorage) loadCandlesFromDB(uid string, inc *pb.Quotation, from, 
 				Close:      investgo.FloatToQuotation(dst.Close, inc),
 				Volume:     int64(dst.Volume),
 				Time:       investgo.TimeToTimestamp(time.Unix(int64(dst.Time), 0)),
-				IsComplete: dst.IsComplete == 1,
+				IsComplete: dst.IsComplete,
 			})
 		}
 	}
